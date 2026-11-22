@@ -1,0 +1,132 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+enum Role {
+  ADMIN_PENGAJUAN
+  STAKEHOLDER
+}
+enum Status {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+model User {
+  id           String @id @default(cuid())
+  email        String @unique
+  name         String
+  passwordHash String
+  role         Role
+  jobs         Job[]
+  audits       AuditLog[]
+  rabAudits    RabAudit[]
+}
+model Job {
+  id              String @id @default(cuid())
+  title           String
+  description     String
+  estimatedCost   Decimal? @db.Decimal(18, 2)
+  agenda          String @default("")
+  applicant       String @default("")
+  installationOwner String @default("")
+  installationTypeCode String?
+  installationType InstallationType? @relation(fields: [installationTypeCode], references: [code], onDelete: Restrict)
+  capacity        Decimal? @db.Decimal(24, 6)
+  capacityUnit    String @default("")
+  location        String @default("")
+  offerValue      Decimal? @db.Decimal(18, 2)
+  status          Status @default(DRAFT)
+  version         Int @default(0)
+  rejectionReason String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  ownerId         String
+  owner           User @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  attachments     Attachment[]
+  audits          AuditLog[]
+  rab             Rab?
+  @@index([ownerId, createdAt])
+  @@index([status, createdAt])
+  @@index([installationTypeCode])
+}
+
+enum RabStatus {
+  RAB_DRAFT
+  RAB_REVIEW
+  RAB_APPROVED
+}
+
+model Rab {
+  id        String @id @default(cuid())
+  jobId     String @unique
+  job       Job @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  status    RabStatus @default(RAB_DRAFT)
+  version   Int @default(0)
+  notes     String @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  items     RabItem?
+  audits    RabAudit[]
+}
+
+model RabItem {
+  rabId                 String @id
+  rab                   Rab @relation(fields: [rabId], references: [id], onDelete: Restrict)
+  fixCost               Decimal? @db.Decimal(18, 2)
+  sppjTransport         Decimal? @db.Decimal(18, 2)
+  nidi                  Decimal? @db.Decimal(18, 2)
+  izinEsdm              Decimal? @db.Decimal(18, 2)
+  lhpp                  Decimal? @db.Decimal(18, 2)
+  pnbp                  Decimal? @db.Decimal(18, 2)
+  verifikator           Decimal? @db.Decimal(18, 2)
+  sewaAlat              Decimal? @db.Decimal(18, 2)
+  variabelCost          Decimal? @db.Decimal(18, 2)
+  ppn                   Decimal? @db.Decimal(18, 2)
+  jumlahNilaiPekerjaan  Decimal? @db.Decimal(18, 2)
+  biayaOperasional      Decimal? @db.Decimal(18, 2)
+  rencanaMargin         Decimal? @db.Decimal(18, 2)
+}
+
+model RabAudit {
+  id         String @id @default(cuid())
+  rabId      String
+  rab        Rab @relation(fields: [rabId], references: [id], onDelete: Restrict)
+  actorId    String
+  actor      User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  fromStatus RabStatus?
+  toStatus   RabStatus
+  reason     String?
+  createdAt  DateTime @default(now())
+  @@index([rabId, createdAt])
+}
+model InstallationType {
+  code String @id
+  name String
+  jobs Job[]
+}
+model Attachment {
+  id        String @id @default(cuid())
+  jobId     String
+  job       Job @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  filename  String
+  storageId String @unique
+  mimeType  String
+  size      Int
+  createdAt DateTime @default(now())
+}
+model AuditLog {
+  id         String @id @default(cuid())
+  jobId      String
+  job        Job @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  actorId    String
+  actor      User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  fromStatus Status?
+  toStatus   Status
+  reason     String?
+  createdAt  DateTime @default(now())
+  @@index([jobId, createdAt])
+}

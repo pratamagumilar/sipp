@@ -1,0 +1,11 @@
+CREATE TYPE "Role" AS ENUM ('ADMIN_PENGAJUAN', 'STAKEHOLDER');
+CREATE TYPE "Status" AS ENUM ('DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED');
+CREATE TABLE "User" ("id" TEXT PRIMARY KEY, "email" TEXT NOT NULL UNIQUE, "name" TEXT NOT NULL, "passwordHash" TEXT NOT NULL, "role" "Role" NOT NULL);
+CREATE TABLE "Job" ("id" TEXT PRIMARY KEY, "title" TEXT NOT NULL, "description" TEXT NOT NULL, "estimatedCost" DECIMAL(18,2), "status" "Status" NOT NULL DEFAULT 'DRAFT', "version" INTEGER NOT NULL DEFAULT 0, "rejectionReason" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, "ownerId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE, CONSTRAINT "Job_cost_nonnegative" CHECK ("estimatedCost" IS NULL OR "estimatedCost" >= 0));
+CREATE TABLE "Attachment" ("id" TEXT PRIMARY KEY, "jobId" TEXT NOT NULL REFERENCES "Job"("id") ON DELETE RESTRICT ON UPDATE CASCADE, "filename" TEXT NOT NULL, "storageId" TEXT NOT NULL UNIQUE, "mimeType" TEXT NOT NULL, "size" INTEGER NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE "AuditLog" ("id" TEXT PRIMARY KEY, "jobId" TEXT NOT NULL REFERENCES "Job"("id") ON DELETE RESTRICT ON UPDATE CASCADE, "actorId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE, "fromStatus" "Status", "toStatus" "Status" NOT NULL, "reason" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE INDEX "Job_ownerId_createdAt_idx" ON "Job"("ownerId", "createdAt");
+CREATE INDEX "Job_status_createdAt_idx" ON "Job"("status", "createdAt");
+CREATE INDEX "AuditLog_jobId_createdAt_idx" ON "AuditLog"("jobId", "createdAt");
+CREATE FUNCTION prevent_audit_change() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Audit log is immutable'; END; $$;
+CREATE TRIGGER audit_immutable BEFORE UPDATE OR DELETE ON "AuditLog" FOR EACH ROW EXECUTE FUNCTION prevent_audit_change();
