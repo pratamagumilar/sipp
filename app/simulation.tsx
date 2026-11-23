@@ -25,9 +25,9 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
   return response.json();
 }
 
-export default function Simulation({ user, logout }: { user: User; logout: () => Promise<void> }) {
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [types, setTypes] = useState<InstallationType[]>([]);
+export default function Simulation({ user, logout, initial }: { user: User; logout: () => Promise<void>; initial: { jobs: Job[]; types: InstallationType[] } | null }) {
+  const [jobs, setJobs] = useState<Job[]>(initial?.jobs ?? []);
+  const [types, setTypes] = useState<InstallationType[]>(initial?.types ?? []);
   const [job, setJob] = useState<Job | null>(null);
   const [view, setView] = useState<'list' | 'detail' | 'edit'>('list');
   const [draft, setDraft] = useState<Fields>(blank);
@@ -36,7 +36,7 @@ export default function Simulation({ user, logout }: { user: User; logout: () =>
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initial);
   const [busy, setBusy] = useState(false);
   const [uncertainCreate, setUncertainCreate] = useState(false);
   const [search, setSearch] = useState('');
@@ -55,6 +55,7 @@ export default function Simulation({ user, logout }: { user: User; logout: () =>
   const restoring = useRef(false);
   const routeRequest = useRef(0);
   const listRequest = useRef(0);
+  const seededList = useRef(!!initial);
   const roleLabel = user.role === 'STAKEHOLDER' ? 'Stakeholder' : user.role === 'FINANCE' ? 'Finance' : 'Admin Pengajuan & RAB';
 
   useEffect(() => {
@@ -64,7 +65,7 @@ export default function Simulation({ user, logout }: { user: User; logout: () =>
     return () => window.removeEventListener('beforeunload', warn);
   }, [dirty, file, reason, rabDirty, spkDirty, busy, rabBusy, spkBusy]);
   useEffect(() => { if (initialView.current) { initialView.current = false; return; } if (module === 'jobs') heading.current?.focus(); }, [view, job?.id, module]);
-  useEffect(() => { if (user.role !== 'FINANCE') void load(); }, []);
+  useEffect(() => { if (!initial && user.role !== 'FINANCE') void load(); }, []);
 
   function pushUrl(url: string) {
     if (window.location.pathname === url) return;
@@ -100,7 +101,7 @@ export default function Simulation({ user, logout }: { user: User; logout: () =>
     if (!route.id) {
       setJob(null); setDraft(blank()); setView(route.view === 'edit' && user.role !== 'ADMIN_PENGAJUAN' ? 'list' : route.view);
       if (route.view === 'edit' && user.role !== 'ADMIN_PENGAJUAN') { window.history.replaceState(window.history.state, '', jobPath('list')); currentUrl.current = window.location.pathname; setError('Anda tidak dapat membuat pengajuan.'); }
-      if (route.view === 'list') void load();
+      if (route.view === 'list') { if (seededList.current) seededList.current = false; else void load(); }
       return;
     }
     setJob(null); setDraft(blank()); setView('detail'); setBusy(true);
