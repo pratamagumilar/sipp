@@ -31,3 +31,14 @@ export function rabPath(view: JobRoute['view'], id?: string) {
   if (!id) throw new Error('ID pekerjaan diperlukan untuk route RAB');
   return `/rab/${encodeURIComponent(id)}${view === 'edit' ? '/edit' : ''}`;
 }
+
+export function spkRoute(pathname: string): { view: 'list' | 'settings' | 'detail'; id?: string } | null {
+  const parts = pathname.split('/');
+  if (parts[0] !== '' || parts[1] !== 'spk' || parts.length > 3) return null;
+  if (parts.length === 2 || (parts.length === 3 && parts[2] === '')) return { view: 'list' };
+  try {
+    const id = decodeURIComponent(parts[2]);
+    if (!id || /[\/\\\x00-\x1f\x7f]/.test(id) || id === '.' || id === '..') return null;
+    return id === 'pengaturan' ? { view: 'settings' } : { view: 'detail', id };
+  } catch { return null; }
+}

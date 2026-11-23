@@ -10,10 +10,10 @@ KerjaNyata adalah sistem manajemen pekerjaan & dokumentasi proyek berbasis web y
 ## 3. System Scope & User Roles
 | Role | Pengajuan | RAB | SPK/PO | Assign & Invoice | Update Progres | Monitoring | Pengaturan |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| Admin Pengajuan & RAB | Create/Edit sendiri; akses sebelum `APPROVED` hanya milik sendiri | Create/Edit untuk semua pengajuan `APPROVED` | Read | Read | Read | Read | — |
+| Admin Pengajuan & RAB | Create/Edit sendiri; akses sebelum `APPROVED` hanya milik sendiri | Create/Edit untuk semua pengajuan `APPROVED` | Read | Read | Read | Read | Configure trigger |
 | Stakeholder | Approve/Reject | Review/Approve | ACK | Read | Read | Full | Read |
 | Pekerja | Read own | Read own | Read own | — | Update own | Read own | — |
-| Admin Finance | Read | Read | Issue | Assign & Invoice | Read | Read | Configure trigger |
+| Admin Finance | Read | Read | Issue | Assign & Invoice | Read | Read | — |
 
 Matriks ini adalah target hak akses, bukan klaim implementasi. Admin Pengajuan & RAB dapat menyusun RAB untuk pengajuan `APPROVED` yang dibuat admin lain; sebelum `APPROVED`, akses pengajuan bagi admin gabungan tetap terbatas pada miliknya sendiri. Admin Finance tidak menyusun RAB. Identitas role database yang ada tetap `ADMIN_PENGAJUAN`; perluasan akses backend dan backend RAB fase 2 belum disetujui atau diterapkan.
 
@@ -23,14 +23,14 @@ Matriks ini adalah target hak akses, bukan klaim implementasi. Admin Pengajuan &
 - **FR-01** (DEC-001): Admin Pengajuan & RAB membuat pengajuan pekerjaan (judul, deskripsi, estimasi biaya, lampiran S3). Status: `DRAFT → SUBMITTED`.
 - **FR-02** (DEC-001): Stakeholder menyetujui/menolak pengajuan satu tingkat; penolakan wajib alasan. Status: `SUBMITTED → APPROVED | REJECTED`.
 - **FR-03** (DEC-002): Admin Pengajuan & RAB membuat draf RAB untuk semua pengajuan `APPROVED`, termasuk buatan admin lain; Stakeholder me-review dan menyetujui (`RAB_DRAFT → RAB_REVIEW → RAB_APPROVED`).
-- **FR-04** (DEC-003/004): Sistem menerbitkan SPK/PO sesuai pemicu yang dikonfigurasi: `AFTER_RAB_APPROVED` (otomatis) atau `MANUAL_FINANCE`. Trigger disimpan di tabel pengaturan, bukan hardcoded.
+- **FR-04** (DEC-003/004): Mode SPK/PO ditentukan dari pengaturan saat RAB disetujui: `AFTER_RAB_APPROVED` menyiapkan SPK/PO otomatis untuk dilengkapi Finance, sedangkan `MANUAL_FINANCE` diproses Finance. Finance mengisi nomor dan nominal sebelum penerbitan. RAB lama masuk antrean manual; jika persiapan otomatis gagal, RAB tetap disetujui dan Finance dapat memulihkannya.
 - **FR-05**: Admin Finance meng-assign pekerja ke SPK/PO dan menerbitkan invoice terkait.
 - **FR-06** (DEC-005): Pekerja meng-update progres (persentase 0–100 + field `notes`). Submit tidak mengunci; edit berikutnya meng-update record yang sama (bukan history baru).
 - **FR-07**: Stakeholder meng-ACK penerbitan SPK/PO.
 - **FR-08**: Stakeholder melihat dashboard monitoring: ringkasan status pengajuan, RAB, SPK/PO, invoice, dan progres pekerja.
 
 ### Admin-Facing
-- **FR-09**: Admin mengelola pengaturan pemicu SPK/PO (DEC-004) tanpa deploy ulang.
+- **FR-09**: Admin Pengajuan & RAB mengelola pengaturan pemicu SPK/PO (DEC-004) tanpa deploy ulang; penerbitan manual tetap oleh Admin Finance.
 - **FR-10**: Admin mengelola user & role (4 role).
 - **FR-11**: Semua transisi status tercatat di audit log (actor, timestamp, dari→ke).
 

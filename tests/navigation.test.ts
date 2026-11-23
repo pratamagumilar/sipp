@@ -1,6 +1,14 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { jobPath, jobRoute, rabPath, rabRoute } from '../app/navigation';
+import { jobPath, jobRoute, rabPath, rabRoute, spkRoute } from '../app/navigation';
+
+test('route SPK menerima CUID dan pengaturan serta menolak jalur tidak aman', () => {
+  assert.deepEqual(spkRoute('/spk'), { view: 'list' });
+  assert.deepEqual(spkRoute('/spk/pengaturan'), { view: 'settings' });
+  assert.deepEqual(spkRoute('/spk/clx1234567890abcdef123456'), { view: 'detail', id: 'clx1234567890abcdef123456' });
+  assert.deepEqual(spkRoute('/spk/pekerjaan%20satu'), { view: 'detail', id: 'pekerjaan satu' });
+  for (const path of ['/spk/a/b', '/spk/%2F', '/spk/%5c', '/spk/%00', '/spk/%2e%2e', '/spk/%zz', '/spk//']) assert.equal(spkRoute(path), null, path);
+});
 
 test('route pengajuan round trip dan menolak jalur tidak valid', () => {
   assert.deepEqual(jobRoute('/'), { view: 'list' });

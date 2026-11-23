@@ -6,7 +6,7 @@ KerjaNyata adalah aplikasi web internal untuk mencatat dan memantau siklus peker
 Dokumen ini adalah brief untuk eksplorasi Stitch atau Figma Make, bukan persetujuan perubahan sistem. Gunakan bahasa Indonesia dan data contoh yang jelas fiktif. Identitas visual baru boleh dieksplorasi; `DESIGN (1).md` tetap berlaku sampai desain penggantinya disetujui.
 
 ## Aktor Dan Alur
-- Admin Pengajuan & RAB membuat draf, mengirim pengajuan, merevisi setelah ditolak, serta menyusun dan mengajukan RAB untuk review atas semua pengajuan `APPROVED`, termasuk buatan admin lain. Sebelum `APPROVED`, akses pengajuan bagi admin gabungan hanya milik sendiri.
+- Admin Pengajuan & RAB membuat draf, mengirim pengajuan, merevisi setelah ditolak, menyusun dan mengajukan RAB untuk review atas semua pengajuan `APPROVED`, serta mengatur pemicu SPK/PO. Sebelum `APPROVED`, akses pengajuan bagi admin gabungan hanya milik sendiri.
 - Stakeholder menyetujui atau menolak pengajuan, meninjau RAB, mengakui SPK/PO dan memantau pekerjaan.
 - Admin Finance menerbitkan SPK/PO sesuai pemicu, menugaskan pekerja dan menerbitkan invoice; tidak menyusun RAB.
 - Pekerja melihat pekerjaan yang ditugaskan dan memperbarui progresnya.

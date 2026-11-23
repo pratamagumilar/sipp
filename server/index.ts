@@ -25,7 +25,7 @@ const fields = z.object({
   capacityUnit: z.string().trim().max(50).optional(), location: z.string().trim().max(1000).optional(),
   offerValue: money.optional(), version: z.number().int().min(0).optional(),
 }).strict();
-type Actor = { id: string; role: 'ADMIN_PENGAJUAN' | 'STAKEHOLDER' };
+type Actor = { id: string; role: 'ADMIN_PENGAJUAN' | 'STAKEHOLDER' | 'FINANCE' };
 declare global { namespace Express { interface Request { actor: Actor } } }
 
 app.use(async (req, res, next) => {
@@ -37,6 +37,7 @@ app.use(async (req, res, next) => {
     const user = await db.user.findUnique({ where: { id: token.sub }, select: { id: true, role: true } });
     if (!user) return res.status(401).json({ error: 'Sesi tidak valid' });
     req.actor = user;
+    if (user.role === 'FINANCE' && !(/^\/spks\/?$/.test(req.path) || /^\/jobs\/[^/]+\/spk(?:\/(?:prepare|issue|ack))?\/?$/.test(req.path) || (req.method === 'GET' && req.path === '/settings/spk-trigger'))) return res.sendStatus(403);
     next();
   } catch (error) { next(error); }
 });
@@ -49,6 +50,93 @@ const amount = money.nullable().transform(value => value || null);
 const rabItems = z.object({ fixCost: amount, sppjTransport: amount, nidi: amount, izinEsdm: amount, lhpp: amount, pnbp: amount, verifikator: amount, sewaAlat: amount, variabelCost: amount, ppn: amount, jumlahNilaiPekerjaan: amount, biayaOperasional: amount, rencanaMargin: amount }).strict();
 const rabVersion = z.number().int().min(0).max(2147483646);
 const emptyRabError = new Error('Minimal satu kolom biaya harus diisi sebelum dikirim');
+const spkInclude = { job: { select: rabJob }, spk: { include: { audits: { orderBy: { createdAt: 'asc' as const }, select: { event: true, createdAt: true, actor: { select: { name: true } } } }, acknowledgedBy: { select: { name: true } } } } };
+const spkView = (rab: Prisma.RabGetPayload<{ include: typeof spkInclude }>) => ({ job: rab.job, trigger: rab.spkTrigger, preparationStatus: rab.spk?.status ?? 'UNPREPARED', spk: rab.spk });
+async function prepareSpk(jobId: string, actorId: string, event: string) {
+  return db.$transaction(async tx => {
+    const rows = await tx.$queryRaw<{ id: string }[]>`SELECT r."id" FROM "Rab" r JOIN "Job" j ON j."id" = r."jobId" WHERE r."jobId" = ${jobId} AND r."status" = 'RAB_APPROVED' AND j."status" = 'APPROVED' FOR UPDATE OF r`;
+    if (!rows.length) return null;
+    const existing = await tx.spk.findUnique({ where: { rabId: rows[0].id } });
+    if (!existing) await tx.spk.create({ data: { rabId: rows[0].id, audits: { create: { actorId, event } } } });
+    return spkView(await tx.rab.findUniqueOrThrow({ where: { id: rows[0].id }, include: spkInclude }));
+  });
+}
+app.get('/settings/spk-trigger', async (_req, res) => {
+  const setting = await db.setting.findUniqueOrThrow({ where: { id: 'spk' } });
+  res.json({ trigger: setting.spkTrigger, version: setting.version });
+});
+app.put('/settings/spk-trigger', async (req, res) => {
+  if (req.actor.role !== 'ADMIN_PENGAJUAN') return res.sendStatus(403);
+  const parsed = z.object({ trigger: z.enum(['AFTER_RAB_APPROVED', 'MANUAL_FINANCE']), version: rabVersion }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(422).json({ error: 'Pemicu tidak valid' });
+  const setting = await db.$transaction(async tx => {
+    const rows = await tx.$queryRaw<{ spkTrigger: 'AFTER_RAB_APPROVED' | 'MANUAL_FINANCE'; version: number }[]>`SELECT "spkTrigger", "version" FROM "Setting" WHERE "id" = 'spk' FOR UPDATE`;
+    if (!rows.length) throw new Error('Pengaturan SPK tidak ditemukan');
+    if (rows[0].version !== parsed.data.version) return null;
+    if (rows[0].spkTrigger === parsed.data.trigger) return rows[0];
+    const updated = await tx.setting.update({ where: { id: 'spk' }, data: { spkTrigger: parsed.data.trigger, version: { increment: 1 } } });
+    await tx.settingAudit.create({ data: { settingId: 'spk', actorId: req.actor.id, fromTrigger: rows[0].spkTrigger, toTrigger: updated.spkTrigger } });
+    return updated;
+  });
+  if (!setting) return res.status(409).json({ error: 'Pengaturan berubah. Muat ulang.' });
+  res.json({ trigger: setting.spkTrigger, version: setting.version });
+});
+app.get('/spks', async (_req, res) => {
+  const rabs = await db.rab.findMany({ where: { status: 'RAB_APPROVED', job: { status: 'APPROVED' } }, orderBy: { updatedAt: 'desc' }, include: spkInclude });
+  res.json(rabs.map(spkView));
+});
+app.get('/jobs/:id/spk', async (req, res) => {
+  const rab = await db.rab.findFirst({ where: { jobId: String(req.params.id), status: 'RAB_APPROVED', job: { status: 'APPROVED' } }, include: spkInclude });
+  if (!rab) return res.status(404).json({ error: 'SPK tidak ditemukan' });
+  res.json(spkView(rab));
+});
+app.post('/jobs/:id/spk/prepare', async (req, res) => {
+  if (req.actor.role !== 'FINANCE') return res.sendStatus(403);
+  if (!z.object({}).strict().safeParse(req.body).success) return res.status(422).json({ error: 'Data tidak valid' });
+  const result = await prepareSpk(String(req.params.id), req.actor.id, 'MANUAL_PREPARED');
+  if (!result) return res.status(404).json({ error: 'RAB disetujui tidak ditemukan' });
+  res.json(result);
+});
+app.post('/jobs/:id/spk/issue', async (req, res) => {
+  if (req.actor.role !== 'FINANCE') return res.sendStatus(403);
+  const parsed = z.object({ number: z.string().trim().min(1).max(200), amount: money.refine(value => value !== '') }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(422).json({ error: 'Nomor atau nominal tidak valid' });
+  try {
+    const result = await db.$transaction(async tx => {
+      const rows = await tx.$queryRaw<{ id: string }[]>`SELECT r."id" FROM "Rab" r JOIN "Job" j ON j."id" = r."jobId" WHERE r."jobId" = ${String(req.params.id)} AND r."status" = 'RAB_APPROVED' AND j."status" = 'APPROVED' FOR UPDATE OF r`;
+      if (!rows.length) return 'missing' as const;
+      const spk = await tx.spk.findUnique({ where: { rabId: rows[0].id } });
+      if (!spk) return 'unprepared' as const;
+      if (spk.status === 'ISSUED') {
+        if (spk.number !== parsed.data.number || !spk.amount?.equals(parsed.data.amount)) return 'conflict' as const;
+      } else {
+        await tx.spk.update({ where: { id: spk.id }, data: { status: 'ISSUED', number: parsed.data.number, amount: parsed.data.amount, audits: { create: { actorId: req.actor.id, event: 'ISSUED' } } } });
+      }
+      return spkView(await tx.rab.findUniqueOrThrow({ where: { id: rows[0].id }, include: spkInclude }));
+    });
+    if (result === 'missing') return res.status(404).json({ error: 'RAB disetujui tidak ditemukan' });
+    if (result === 'unprepared' || result === 'conflict') return res.status(409).json({ error: 'SPK belum disiapkan atau sudah diterbitkan dengan data berbeda' });
+    res.json(result);
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') return res.status(409).json({ error: 'Nomor SPK sudah digunakan' });
+    throw error;
+  }
+});
+app.post('/jobs/:id/spk/ack', async (req, res) => {
+  if (req.actor.role !== 'STAKEHOLDER') return res.sendStatus(403);
+  if (!z.object({}).strict().safeParse(req.body).success) return res.status(422).json({ error: 'Data tidak valid' });
+  const result = await db.$transaction(async tx => {
+    const rows = await tx.$queryRaw<{ id: string }[]>`SELECT r."id" FROM "Rab" r JOIN "Job" j ON j."id" = r."jobId" WHERE r."jobId" = ${String(req.params.id)} AND r."status" = 'RAB_APPROVED' AND j."status" = 'APPROVED' FOR UPDATE OF r`;
+    if (!rows.length) return 'missing' as const;
+    const spk = await tx.spk.findUnique({ where: { rabId: rows[0].id } });
+    if (!spk || spk.status !== 'ISSUED') return 'conflict' as const;
+    if (!spk.acknowledgedAt) await tx.spk.update({ where: { id: spk.id }, data: { acknowledgedAt: new Date(), acknowledgedById: req.actor.id, audits: { create: { actorId: req.actor.id, event: 'ACKNOWLEDGED' } } } });
+    return spkView(await tx.rab.findUniqueOrThrow({ where: { id: rows[0].id }, include: spkInclude }));
+  });
+  if (result === 'missing') return res.status(404).json({ error: 'RAB disetujui tidak ditemukan' });
+  if (result === 'conflict') return res.status(409).json({ error: 'SPK belum diterbitkan' });
+  res.json(result);
+});
 app.get('/rabs/jobs', async (_req, res) => {
   res.json(await db.job.findMany({ where: { status: 'APPROVED' }, orderBy: { updatedAt: 'desc' }, select: { ...rabJob, rab: { select: { status: true, version: true } } } }));
 });
@@ -104,7 +192,9 @@ app.post('/jobs/:id/rab/transitions', async (req, res) => {
   const result = await db.$transaction(async tx => {
     const job = await tx.job.findFirst({ where: { id: jobId, status: 'APPROVED' }, select: { id: true } });
     if (!job) return 'missing' as const;
-    const changed = await tx.rab.updateMany({ where: { jobId, status: from, version }, data: { status: to, version: { increment: 1 } } });
+    const settings = action === 'approve' ? await tx.$queryRaw<{ spkTrigger: 'AFTER_RAB_APPROVED' | 'MANUAL_FINANCE' }[]>`SELECT "spkTrigger" FROM "Setting" WHERE "id" = 'spk' FOR SHARE` : [];
+    if (action === 'approve' && !settings.length) throw new Error('Pengaturan SPK tidak ditemukan');
+    const changed = await tx.rab.updateMany({ where: { jobId, status: from, version }, data: { status: to, version: { increment: 1 }, ...(action === 'approve' ? { spkTrigger: settings[0].spkTrigger } : {}) } });
     if (!changed.count) return 'conflict' as const;
     const rab = await tx.rab.findUniqueOrThrow({ where: { jobId }, select: { id: true, items: { select: rabInclude.items.select } } });
     if (action === 'submit' && (!rab.items || Object.values(rab.items).every(value => value === null))) throw emptyRabError;
@@ -114,6 +204,10 @@ app.post('/jobs/:id/rab/transitions', async (req, res) => {
   if (result === 'missing') return res.status(404).json({ error: 'Pengajuan tidak ditemukan' });
   if (result === 'conflict') return res.status(409).json({ error: 'Status atau versi berubah. Muat ulang.' });
   if (result === 'required') return res.status(422).json({ error: emptyRabError.message });
+  if (action === 'approve' && result.spkTrigger === 'AFTER_RAB_APPROVED') {
+    try { await prepareSpk(jobId, req.actor.id, 'AUTO_PREPARED'); }
+    catch (error) { console.error('Persiapan otomatis SPK gagal; Finance dapat memulihkan', error); }
+  }
   res.json(result);
 });
 app.get('/installation-types', async (_req, res) => { res.json(await db.installationType.findMany({ orderBy: { code: 'asc' } })); });

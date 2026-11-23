@@ -14,7 +14,7 @@ Setiap fitur dipetakan ke requirement PRD dan keputusan produk. Dokumen ini mend
 | M4 Penugasan | F-06 Assign Pekerja & Invoice | FR-05 | — | Admin Finance |
 | M5 Progres | F-07 Update Progres Pekerja | FR-06 | DEC-005 | Pekerja |
 | M6 Monitoring | F-08 Dashboard Stakeholder | FR-08 | — | Stakeholder |
-| M7 Pengaturan | F-09 Konfigurasi Pemicu | FR-09 | DEC-004 | Admin |
+| M7 Pengaturan | F-09 Konfigurasi Pemicu | FR-09 | DEC-004 | Admin Pengajuan & RAB |
 | M8 Audit | F-10 Audit Log Transisi | FR-11 | — | Sistem |
 
 ## 2. State Machine Siklus Hidup Pekerjaan
@@ -81,11 +81,10 @@ stateDiagram-v2
 
 **Acceptance Criteria:**
 - Pemicu dibaca dari pengaturan (`Setting.spkTrigger`): `AFTER_RAB_APPROVED` atau `MANUAL_FINANCE`.
-- Jika `AFTER_RAB_APPROVED`: transisi `RAB_APPROVED → SPK_ISSUED` otomatis membuat record SPK/PO.
-- Jika `MANUAL_FINANCE`: Admin Finance menekan "Terbitkan SPK/PO" secara eksplisit.
-- Logika pemicu terenkapsulasi di satu service (`SpkTriggerService`) — perubahan tidak menyentuh modul lain.
+- Jika `AFTER_RAB_APPROVED`: sistem menyiapkan SPK/PO untuk dilengkapi Finance, bukan menerbitkannya langsung.
+- Finance mengisi nomor dan nominal sebelum menerbitkan SPK/PO, baik untuk mode otomatis maupun manual.
 
-**Edge Cases:** pemicu diubah saat ada job `RAB_APPROVED` → job lama tidak retroaktif; hanya job baru mengikuti pemicu aktif.
+**Edge Cases:** mode ditentukan dari pengaturan saat RAB disetujui; RAB yang sudah disetujui sebelum fitur aktif masuk antrean manual Finance. Jika persiapan otomatis gagal, RAB tetap disetujui dan Finance dapat memulihkannya.
 
 ### F-05 — ACK SPK/PO
 **User Story:** Sebagai Stakeholder, saya meng-ACK penerbitan SPK/PO sebagai bukti persetujuan.
@@ -119,9 +118,9 @@ stateDiagram-v2
 **Acceptance Criteria:** kartu ringkasan jumlah per status (pengajuan, RAB, SPK/PO, invoice, progres); tabel job aktif dengan filter status & tahun; load < 2 s (LCP). Detail query di API.md.
 
 ### F-09 — Konfigurasi Pemicu SPK/PO (DEC-004)
-**User Story:** Sebagai Admin, saya memilih pemicu SPK/PO dari pengaturan tanpa deploy ulang.
+**User Story:** Sebagai Admin Pengajuan & RAB, saya memilih pemicu SPK/PO dari pengaturan tanpa deploy ulang.
 
-**Acceptance Criteria:** field `spkTrigger` (`AFTER_RAB_APPROVED` | `MANUAL_FINANCE`) tersimpan di tabel `Setting`; perubahan berlaku untuk job baru; hanya role Admin.
+**Acceptance Criteria:** field `spkTrigger` (`AFTER_RAB_APPROVED` | `MANUAL_FINANCE`) tersimpan di tabel `Setting`; mode dibaca saat RAB disetujui; hanya role Admin Pengajuan & RAB yang dapat mengubahnya. Penerbitan tetap oleh Admin Finance.
 
 ### F-10 — Audit Log Transisi
 **Acceptance Criteria:** setiap transisi status menulis `AuditLog` (actor, `fromStatus`, `toStatus`, `timestamp`, `entityType`, `entityId`); record **immutable** (tanpa update/delete). Lihat DATABASE.md untuk skema.
@@ -141,7 +140,7 @@ Matriks berikut adalah target, bukan hak backend yang telah diterapkan. Role dat
 | Assign pekerja & invoice | — | — | — | ✅ |
 | Update progres | — | — | ✅ (own) | — |
 | Dashboard monitoring | Read | Full | Read (own) | Read |
-| Konfigurasi pemicu | — | Read | — | ✅ |
+| Konfigurasi pemicu | ✅ | Read | — | — |
 
 ## 5. Non-Functional Acceptance (Ringkas)
 

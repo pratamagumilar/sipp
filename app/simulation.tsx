@@ -4,10 +4,11 @@ import { useEffect, useRef, useState } from 'react';
 import styles from './prototype/prototype.module.css';
 import { submissionErrors } from './prototype/validation';
 import RabPreview from './rab-preview';
-import { jobPath, jobRoute, rabPath, rabRoute, type JobRoute } from './navigation';
+import SpkPreview from './spk-preview';
+import { jobPath, jobRoute, rabPath, rabRoute, spkRoute, type JobRoute } from './navigation';
 
 type Status = 'DRAFT' | 'SUBMITTED' | 'REJECTED' | 'APPROVED';
-type User = { name: string; role: 'ADMIN_PENGAJUAN' | 'STAKEHOLDER' };
+type User = { name: string; role: 'ADMIN_PENGAJUAN' | 'STAKEHOLDER' | 'FINANCE' };
 type Fields = { title: string; description: string; agenda: string; applicant: string; installationOwner: string; installationTypeCode: string; capacity: string; capacityUnit: string; location: string; offerValue: string; estimatedCost: string };
 type Job = { id: string; version: number; status: Status; rejectionReason: string | null; owner: { name: string }; attachments?: { id: string; filename: string; size: number }[]; audits?: { id: string; fromStatus: Status | null; toStatus: Status; reason: string | null; createdAt: string; actor: { name: string } }[] } & { [K in keyof Fields]: string | null };
 type InstallationType = { code: string; name: string };
@@ -40,7 +41,10 @@ export default function Simulation({ user, logout }: { user: User; logout: () =>
   const [uncertainCreate, setUncertainCreate] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<Status | 'all'>('all');
-  const [module, setModule] = useState<'jobs' | 'rab'>('jobs');
+  const [module, setModule] = useState<'jobs' | 'rab' | 'spk'>(user.role === 'FINANCE' ? 'spk' : 'jobs');
+  const [spkPath, setSpkPath] = useState('/spk');
+  const [spkDirty, setSpkDirty] = useState(false);
+  const [spkBusy, setSpkBusy] = useState(false);
   const [rabDirty, setRabDirty] = useState(false);
   const [rabBusy, setRabBusy] = useState(false);
   const [rabTarget, setRabTarget] = useState<{ route: JobRoute; sequence: number } | null>(null);
@@ -51,16 +55,16 @@ export default function Simulation({ user, logout }: { user: User; logout: () =>
   const restoring = useRef(false);
   const routeRequest = useRef(0);
   const listRequest = useRef(0);
-  const roleLabel = user.role === 'STAKEHOLDER' ? 'Stakeholder' : 'Admin Pengajuan & RAB';
+  const roleLabel = user.role === 'STAKEHOLDER' ? 'Stakeholder' : user.role === 'FINANCE' ? 'Finance' : 'Admin Pengajuan & RAB';
 
   useEffect(() => {
-    if (!dirty && !file && !reason && !rabDirty && !busy && !rabBusy) return;
+    if (!dirty && !file && !reason && !rabDirty && !spkDirty && !busy && !rabBusy && !spkBusy) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [dirty, file, reason, rabDirty, busy, rabBusy]);
-  useEffect(() => { if (initialView.current) { initialView.current = false; return; } heading.current?.focus(); }, [view, job?.id]);
-  useEffect(() => { void load(); }, []);
+  }, [dirty, file, reason, rabDirty, spkDirty, busy, rabBusy, spkBusy]);
+  useEffect(() => { if (initialView.current) { initialView.current = false; return; } if (module === 'jobs') heading.current?.focus(); }, [view, job?.id, module]);
+  useEffect(() => { if (user.role !== 'FINANCE') void load(); }, []);
 
   function pushUrl(url: string) {
     if (window.location.pathname === url) return;
@@ -75,6 +79,11 @@ export default function Simulation({ user, logout }: { user: User; logout: () =>
     else pushUrl(url);
   }
   function applyLocation(pathname: string) {
+    if (spkRoute(pathname)) {
+      ++routeRequest.current; setBusy(false); setDirty(false); setFile(null); setReason(''); setJob(null); setView('list');
+      setSpkPath(pathname); setModule('spk'); return;
+    }
+    if (user.role === 'FINANCE') { window.history.replaceState(window.history.state, '', '/spk'); currentUrl.current = '/spk'; setSpkPath('/spk'); setModule('spk'); return; }
     const rab = rabRoute(pathname);
     if (rab) {
       ++routeRequest.current;
@@ -116,9 +125,9 @@ export default function Simulation({ user, logout }: { user: User; logout: () =>
   useEffect(() => {
     const onPop = (event: PopStateEvent) => {
       if (restoring.current) { restoring.current = false; return; }
-      const target = jobRoute(window.location.pathname) || rabRoute(window.location.pathname);
+      const target = jobRoute(window.location.pathname) || rabRoute(window.location.pathname) || spkRoute(window.location.pathname);
       const nextIndex = event.state?.knIndex;
-      if (busy || rabBusy || !leave()) {
+      if (busy || rabBusy || spkBusy || !leave()) {
         if (typeof nextIndex === 'number' && nextIndex !== historyIndex.current) {
           restoring.current = true; window.history.go(historyIndex.current - nextIndex);
         } else {
@@ -134,7 +143,7 @@ export default function Simulation({ user, logout }: { user: User; logout: () =>
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
-  }, [dirty, file, reason, rabDirty, busy, rabBusy]);
+  }, [dirty, file, reason, rabDirty, spkDirty, busy, rabBusy, spkBusy]);
 
   async function load() {
     const request = ++listRequest.current;
@@ -143,8 +152,8 @@ export default function Simulation({ user, logout }: { user: User; logout: () =>
     catch (e) { if (request === listRequest.current) setError(e instanceof Error ? e.message : 'Gagal memuat data'); }
     finally { if (request === listRequest.current) setLoading(false); }
   }
-  function leave() { return (!dirty && !file && !reason && !rabDirty) || window.confirm('Perubahan formulir, lampiran, atau catatan belum disimpan. Tinggalkan halaman ini?'); }
-  function switchModule(next: 'jobs' | 'rab') { if (next === module || busy || rabBusy || !leave()) return; if (next === 'rab') { navigateRab({ view: 'list' }); setRabTarget(previous => ({ route: { view: 'list' }, sequence: (previous?.sequence ?? 0) + 1 })); } else pushRoute({ view: 'list' }); setDirty(false); setFile(null); setReason(''); setRabDirty(false); setJob(null); setView('list'); setModule(next); }
+  function leave() { return (!dirty && !file && !reason && !rabDirty && !spkDirty) || window.confirm('Perubahan formulir, lampiran, catatan, atau pengaturan belum disimpan. Tinggalkan halaman ini?'); }
+  function switchModule(next: 'jobs' | 'rab' | 'spk') { if (next === module || busy || rabBusy || spkBusy || !leave()) return; if (next === 'rab') { navigateRab({ view: 'list' }); setRabTarget(previous => ({ route: { view: 'list' }, sequence: (previous?.sequence ?? 0) + 1 })); } else if (next === 'spk') { pushUrl('/spk'); setSpkPath('/spk'); } else pushRoute({ view: 'list' }); setDirty(false); setFile(null); setReason(''); setRabDirty(false); setSpkDirty(false); setJob(null); setView('list'); setModule(next); }
   function list() { if (busy || rabBusy || !leave()) return; pushRoute({ view: 'list' }); setDirty(false); setFile(null); setReason(''); setError(''); setJob(null); setView('list'); void load(); }
   async function detail(id: string) {
     if (busy || rabBusy || !leave()) return;
@@ -196,10 +205,11 @@ export default function Simulation({ user, logout }: { user: User; logout: () =>
   const cards = [{ label: 'Total pekerjaan', count: jobs.length }, ...(['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED'] as Status[]).map(status => ({ label: labels[status], count: jobs.filter(item => item.status === status).length }))];
 
   return <div className={styles.prototype}>
-    <header className={styles.header}><div className={styles.brand}><strong>KerjaNyata</strong><span className={styles.headerSub}>RUANG KERJA</span></div><div className={styles.account}><span>{user.name}<small>{roleLabel}</small></span><form action={logout} onSubmit={event => { if (busy || rabBusy || !leave()) event.preventDefault(); }}><button type="submit" disabled={busy || rabBusy}>Keluar</button></form></div></header>
-    <div className={styles.workspace}><aside className={styles.sidebar}><p>MENU UTAMA</p><nav aria-label="Menu utama"><button aria-current={module === 'jobs' ? 'page' : undefined} onClick={() => module === 'jobs' ? list() : switchModule('jobs')} disabled={busy}>Pengajuan</button><button aria-current={module === 'rab' ? 'page' : undefined} onClick={() => switchModule('rab')} disabled={busy}>Penyusunan &amp; Review RAB</button><span className={styles.navHeading}>MODUL MENDATANG</span><button disabled>SPK / PO</button><button disabled>Penugasan</button><button disabled>Invoice</button><button disabled>Monitoring</button></nav><p className={styles.sidebarNote}>KerjaNyata<br />Ruang kerja internal</p></aside>
+    <header className={styles.header}><div className={styles.brand}><strong>KerjaNyata</strong><span className={styles.headerSub}>RUANG KERJA</span></div><div className={styles.account}><span>{user.name}<small>{roleLabel}</small></span><form action={logout} onSubmit={event => { if (busy || rabBusy || spkBusy || !leave()) event.preventDefault(); }}><button type="submit" disabled={busy || rabBusy || spkBusy}>Keluar</button></form></div></header>
+    <div className={styles.workspace}><aside className={styles.sidebar}><p>MENU UTAMA</p><nav aria-label="Menu utama">{user.role !== 'FINANCE' && <><button aria-current={module === 'jobs' ? 'page' : undefined} onClick={() => module === 'jobs' ? list() : switchModule('jobs')} disabled={busy || spkBusy}>Pengajuan</button><button aria-current={module === 'rab' ? 'page' : undefined} onClick={() => switchModule('rab')} disabled={busy || spkBusy}>Penyusunan &amp; Review RAB</button></>}<button aria-current={module === 'spk' ? 'page' : undefined} onClick={() => switchModule('spk')} disabled={busy || spkBusy}>SPK / PO</button><span className={styles.navHeading}>MODUL MENDATANG</span><button disabled>Penugasan</button><button disabled>Invoice</button><button disabled>Monitoring</button></nav><p className={styles.sidebarNote}>KerjaNyata<br />Ruang kerja internal</p></aside>
     <main className={styles.main}>
-      <div hidden={module !== 'rab'}><RabPreview role={user.role} active={module === 'rab'} onDirtyChange={setRabDirty} onBusyChange={setRabBusy} target={rabTarget} onNavigate={navigateRab} /></div>
+      {user.role !== 'FINANCE' && <div hidden={module !== 'rab'}><RabPreview role={user.role} active={module === 'rab'} onDirtyChange={setRabDirty} onBusyChange={setRabBusy} target={rabTarget} onNavigate={navigateRab} /></div>}
+      <div hidden={module !== 'spk'}><SpkPreview role={user.role} active={module === 'spk'} path={spkPath} onDirtyChange={setSpkDirty} onBusyChange={setSpkBusy} navigate={url => { pushUrl(url); setSpkPath(url); }} /></div>
       <div hidden={module !== 'jobs'}>
       <div className={styles.topline}><span>Beranda / Pengajuan{view !== 'list' ? ' / Detail' : ''}</span></div>
       <div className={styles.titleRow}><div><h1 ref={heading} tabIndex={-1}>{view === 'list' ? 'Pengajuan pekerjaan' : view === 'edit' ? 'Form pengajuan' : 'Detail pekerjaan'}</h1><p className={styles.subtitle}>Telusuri pengajuan dan proses review dalam satu alur.</p></div>{view === 'list' && user.role === 'ADMIN_PENGAJUAN' && <button className={styles.primary} disabled={busy || loading || !types.length} onClick={() => edit(null)}>+ Buat pengajuan</button>}</div>
