@@ -8,7 +8,7 @@ Dokumen ini adalah brief untuk eksplorasi Stitch atau Figma Make, bukan persetuj
 ## Aktor Dan Alur
 - Admin Pengajuan & RAB membuat draf, mengirim pengajuan, merevisi setelah ditolak, menyusun dan mengajukan RAB untuk review atas semua pengajuan `APPROVED`, serta mengatur pemicu SPK/PO. Sebelum `APPROVED`, akses pengajuan bagi admin gabungan hanya milik sendiri.
 - Stakeholder menyetujui atau menolak pengajuan, meninjau RAB, mengakui SPK/PO dan memantau pekerjaan.
-- Admin Finance menerbitkan SPK/PO sesuai pemicu, menugaskan pekerja dan menerbitkan invoice; tidak menyusun RAB.
+- Admin Finance menerbitkan SPK/PO sesuai pemicu, membaca penugasan dan menerbitkan invoice; tidak menyusun RAB.
 - Pekerja melihat pekerjaan yang ditugaskan dan memperbarui progresnya.
 
 Alur utama: draf pengajuan → dikirim → disetujui/ditolak → RAB → SPK/PO → penugasan → progres → selesai → arsip. Status dan akses yang tersedia harus terlihat jelas; jangan menyimulasikan aksi role yang tidak berwenang.
@@ -43,7 +43,7 @@ Tampilkan komponen spreadsheet sebagai kandidat diskusi: fix cost, SPPJ dan tran
 
 ## Layar Berikutnya
 - MVP 3: pengaturan pemicu, penerbitan SPK/PO dan ACK.
-- MVP 4: penugasan pekerja dan invoice.
+- MVP 4: surat penugasan oleh Admin Pengajuan & RAB dengan akun pekerja dan akses tugas. Invoice oleh Finance menyusul. Backend penugasan telah disetujui; pekerja dapat memperbarui progres tugasnya.
 - MVP 5: progres pekerjaan dan arsip read-only.
 - MVP 6: monitoring lintas tahun, filter, ringkasan dan pengelolaan pengguna.
 

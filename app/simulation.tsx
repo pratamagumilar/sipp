@@ -5,7 +5,8 @@ import styles from './prototype/prototype.module.css';
 import { submissionErrors } from './prototype/validation';
 import RabPreview from './rab-preview';
 import SpkPreview from './spk-preview';
-import { jobPath, jobRoute, rabPath, rabRoute, spkRoute, type JobRoute } from './navigation';
+import AssignmentPreview from './assignment-preview';
+import { assignmentRoute, jobPath, jobRoute, rabPath, rabRoute, spkRoute, type JobRoute } from './navigation';
 
 type Status = 'DRAFT' | 'SUBMITTED' | 'REJECTED' | 'APPROVED';
 type User = { name: string; role: 'ADMIN_PENGAJUAN' | 'STAKEHOLDER' | 'FINANCE' };
@@ -41,7 +42,10 @@ export default function Simulation({ user, logout, initial }: { user: User; logo
   const [uncertainCreate, setUncertainCreate] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<Status | 'all'>('all');
-  const [module, setModule] = useState<'jobs' | 'rab' | 'spk'>(user.role === 'FINANCE' ? 'spk' : 'jobs');
+  const [module, setModule] = useState<'jobs' | 'rab' | 'spk' | 'assignment'>(user.role === 'FINANCE' ? 'spk' : 'jobs');
+  const [assignmentPath, setAssignmentPath] = useState('/penugasan');
+  const [assignmentBusy, setAssignmentBusy] = useState(false);
+  const [assignmentDirty, setAssignmentDirty] = useState(false);
   const [spkPath, setSpkPath] = useState('/spk');
   const [spkDirty, setSpkDirty] = useState(false);
   const [spkBusy, setSpkBusy] = useState(false);
@@ -59,11 +63,11 @@ export default function Simulation({ user, logout, initial }: { user: User; logo
   const roleLabel = user.role === 'STAKEHOLDER' ? 'Stakeholder' : user.role === 'FINANCE' ? 'Finance' : 'Admin Pengajuan & RAB';
 
   useEffect(() => {
-    if (!dirty && !file && !reason && !rabDirty && !spkDirty && !busy && !rabBusy && !spkBusy) return;
+    if (!dirty && !file && !reason && !rabDirty && !spkDirty && !assignmentDirty && !busy && !rabBusy && !spkBusy && !assignmentBusy) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [dirty, file, reason, rabDirty, spkDirty, busy, rabBusy, spkBusy]);
+  }, [dirty, file, reason, rabDirty, spkDirty, assignmentDirty, busy, rabBusy, spkBusy, assignmentBusy]);
   useEffect(() => { if (initialView.current) { initialView.current = false; return; } if (module === 'jobs') heading.current?.focus(); }, [view, job?.id, module]);
   useEffect(() => { if (!initial && user.role !== 'FINANCE') void load(); }, []);
 
@@ -80,6 +84,10 @@ export default function Simulation({ user, logout, initial }: { user: User; logo
     else pushUrl(url);
   }
   function applyLocation(pathname: string) {
+    if (assignmentRoute(pathname)) {
+      ++routeRequest.current; setBusy(false); setDirty(false); setFile(null); setReason(''); setJob(null); setView('list');
+      setAssignmentPath(pathname); setModule('assignment'); return;
+    }
     if (spkRoute(pathname)) {
       ++routeRequest.current; setBusy(false); setDirty(false); setFile(null); setReason(''); setJob(null); setView('list');
       setSpkPath(pathname); setModule('spk'); return;
@@ -126,9 +134,9 @@ export default function Simulation({ user, logout, initial }: { user: User; logo
   useEffect(() => {
     const onPop = (event: PopStateEvent) => {
       if (restoring.current) { restoring.current = false; return; }
-      const target = jobRoute(window.location.pathname) || rabRoute(window.location.pathname) || spkRoute(window.location.pathname);
+      const target = jobRoute(window.location.pathname) || rabRoute(window.location.pathname) || spkRoute(window.location.pathname) || assignmentRoute(window.location.pathname);
       const nextIndex = event.state?.knIndex;
-      if (busy || rabBusy || spkBusy || !leave()) {
+      if (busy || rabBusy || spkBusy || assignmentBusy || !leave()) {
         if (typeof nextIndex === 'number' && nextIndex !== historyIndex.current) {
           restoring.current = true; window.history.go(historyIndex.current - nextIndex);
         } else {
@@ -144,7 +152,7 @@ export default function Simulation({ user, logout, initial }: { user: User; logo
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
-  }, [dirty, file, reason, rabDirty, spkDirty, busy, rabBusy, spkBusy]);
+  }, [dirty, file, reason, rabDirty, spkDirty, assignmentDirty, busy, rabBusy, spkBusy, assignmentBusy]);
 
   async function load() {
     const request = ++listRequest.current;
@@ -153,8 +161,8 @@ export default function Simulation({ user, logout, initial }: { user: User; logo
     catch (e) { if (request === listRequest.current) setError(e instanceof Error ? e.message : 'Gagal memuat data'); }
     finally { if (request === listRequest.current) setLoading(false); }
   }
-  function leave() { return (!dirty && !file && !reason && !rabDirty && !spkDirty) || window.confirm('Perubahan formulir, lampiran, catatan, atau pengaturan belum disimpan. Tinggalkan halaman ini?'); }
-  function switchModule(next: 'jobs' | 'rab' | 'spk') { if (next === module || busy || rabBusy || spkBusy || !leave()) return; if (next === 'rab') { navigateRab({ view: 'list' }); setRabTarget(previous => ({ route: { view: 'list' }, sequence: (previous?.sequence ?? 0) + 1 })); } else if (next === 'spk') { pushUrl('/spk'); setSpkPath('/spk'); } else pushRoute({ view: 'list' }); setDirty(false); setFile(null); setReason(''); setRabDirty(false); setSpkDirty(false); setJob(null); setView('list'); setModule(next); }
+  function leave() { return (!dirty && !file && !reason && !rabDirty && !spkDirty && !assignmentDirty) || window.confirm('Perubahan formulir, lampiran, catatan, atau pengaturan belum disimpan. Tinggalkan halaman ini?'); }
+  function switchModule(next: 'jobs' | 'rab' | 'spk' | 'assignment') { if (next === module || busy || rabBusy || spkBusy || assignmentBusy || !leave()) return; if (next === 'rab') { navigateRab({ view: 'list' }); setRabTarget(previous => ({ route: { view: 'list' }, sequence: (previous?.sequence ?? 0) + 1 })); } else if (next === 'spk') { pushUrl('/spk'); setSpkPath('/spk'); } else if (next === 'assignment') { pushUrl('/penugasan'); setAssignmentPath('/penugasan'); } else pushRoute({ view: 'list' }); setDirty(false); setFile(null); setReason(''); setRabDirty(false); setSpkDirty(false); setAssignmentDirty(false); setJob(null); setView('list'); setModule(next); }
   function list() { if (busy || rabBusy || !leave()) return; pushRoute({ view: 'list' }); setDirty(false); setFile(null); setReason(''); setError(''); setJob(null); setView('list'); void load(); }
   async function detail(id: string) {
     if (busy || rabBusy || !leave()) return;
@@ -206,9 +214,10 @@ export default function Simulation({ user, logout, initial }: { user: User; logo
   const cards = [{ label: 'Total pekerjaan', count: jobs.length }, ...(['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED'] as Status[]).map(status => ({ label: labels[status], count: jobs.filter(item => item.status === status).length }))];
 
   return <div className={styles.prototype}>
-    <header className={styles.header}><div className={styles.brand}><strong>KerjaNyata</strong><span className={styles.headerSub}>RUANG KERJA</span></div><div className={styles.account}><span>{user.name}<small>{roleLabel}</small></span><form action={logout} onSubmit={event => { if (busy || rabBusy || spkBusy || !leave()) event.preventDefault(); }}><button type="submit" disabled={busy || rabBusy || spkBusy}>Keluar</button></form></div></header>
-    <div className={styles.workspace}><aside className={styles.sidebar}><p>MENU UTAMA</p><nav aria-label="Menu utama">{user.role !== 'FINANCE' && <><button aria-current={module === 'jobs' ? 'page' : undefined} onClick={() => module === 'jobs' ? list() : switchModule('jobs')} disabled={busy || spkBusy}>Pengajuan</button><button aria-current={module === 'rab' ? 'page' : undefined} onClick={() => switchModule('rab')} disabled={busy || spkBusy}>Penyusunan &amp; Review RAB</button></>}<button aria-current={module === 'spk' ? 'page' : undefined} onClick={() => switchModule('spk')} disabled={busy || spkBusy}>SPK / PO</button><span className={styles.navHeading}>MODUL MENDATANG</span><button disabled>Penugasan</button><button disabled>Invoice</button><button disabled>Monitoring</button></nav><p className={styles.sidebarNote}>KerjaNyata<br />Ruang kerja internal</p></aside>
+    <header className={styles.header}><div className={styles.brand}><strong>KerjaNyata</strong><span className={styles.headerSub}>RUANG KERJA</span></div><div className={styles.account}><span>{user.name}<small>{roleLabel}</small></span><form action={logout} onSubmit={event => { if (busy || rabBusy || spkBusy || assignmentBusy || !leave()) event.preventDefault(); }}><button type="submit" disabled={busy || rabBusy || spkBusy || assignmentBusy}>Keluar</button></form></div></header>
+    <div className={styles.workspace}><aside className={styles.sidebar}><p>MENU UTAMA</p><nav aria-label="Menu utama">{user.role !== 'FINANCE' && <><button aria-current={module === 'jobs' ? 'page' : undefined} onClick={() => module === 'jobs' ? list() : switchModule('jobs')} disabled={busy || spkBusy || assignmentBusy}>Pengajuan</button><button aria-current={module === 'rab' ? 'page' : undefined} onClick={() => switchModule('rab')} disabled={busy || spkBusy || assignmentBusy}>Penyusunan &amp; Review RAB</button></>}<button aria-current={module === 'spk' ? 'page' : undefined} onClick={() => switchModule('spk')} disabled={busy || spkBusy || assignmentBusy}>SPK / PO</button><button aria-current={module === 'assignment' ? 'page' : undefined} onClick={() => switchModule('assignment')} disabled={busy || rabBusy || spkBusy || assignmentBusy}>Penugasan</button><span className={styles.navHeading}>MODUL MENDATANG</span><button disabled>Invoice</button><button disabled>Monitoring</button></nav><p className={styles.sidebarNote}>KerjaNyata<br />Ruang kerja internal</p></aside>
     <main className={styles.main}>
+      <div hidden={module !== 'assignment'}><AssignmentPreview role={user.role} active={module === 'assignment'} path={assignmentPath} onDirtyChange={setAssignmentDirty} onBusyChange={setAssignmentBusy} navigate={url => { pushUrl(url); setAssignmentPath(url); }} /></div>
       {user.role !== 'FINANCE' && <div hidden={module !== 'rab'}><RabPreview role={user.role} active={module === 'rab'} onDirtyChange={setRabDirty} onBusyChange={setRabBusy} target={rabTarget} onNavigate={navigateRab} /></div>}
       <div hidden={module !== 'spk'}><SpkPreview role={user.role} active={module === 'spk'} path={spkPath} onDirtyChange={setSpkDirty} onBusyChange={setSpkBusy} navigate={url => { pushUrl(url); setSpkPath(url); }} /></div>
       <div hidden={module !== 'jobs'}>

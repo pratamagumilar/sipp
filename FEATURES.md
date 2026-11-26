@@ -11,7 +11,7 @@ Setiap fitur dipetakan ke requirement PRD dan keputusan produk. Dokumen ini mend
 | M2 RAB | F-03 Draf & Review RAB | FR-03 | DEC-002 | Admin Pengajuan & RAB, Stakeholder |
 | M3 SPK/PO | F-04 Penerbitan SPK/PO Berpemicu | FR-04 | DEC-003/004 | Sistem, Admin Finance |
 | M3 SPK/PO | F-05 ACK SPK/PO | FR-07 | — | Stakeholder |
-| M4 Penugasan | F-06 Assign Pekerja & Invoice | FR-05 | — | Admin Finance |
+| M4 Penugasan | F-06 Assign Pekerja & Invoice | FR-05 | — | Admin Pengajuan & RAB (penugasan), Finance (invoice) |
 | M5 Progres | F-07 Update Progres Pekerja | FR-06 | DEC-005 | Pekerja |
 | M6 Monitoring | F-08 Dashboard Stakeholder | FR-08 | — | Stakeholder |
 | M7 Pengaturan | F-09 Konfigurasi Pemicu | FR-09 | DEC-004 | Admin Pengajuan & RAB |
@@ -19,7 +19,7 @@ Setiap fitur dipetakan ke requirement PRD dan keputusan produk. Dokumen ini mend
 
 ## 2. State Machine Siklus Hidup Pekerjaan
 
-Seluruh modul beroperasi pada satu entitas `Job` dengan status agregat. Transisi divalidasi server-side; transisi ilegal ditolak `409 Conflict`.
+Diagram berikut menggambarkan siklus bisnis. Implementasi memakai status terpisah: `Job.status` untuk pengajuan, `Rab.status`, `Spk.status`, dan `Assignment.status` untuk penugasan/progres. `Job.status` tetap `APPROVED` saat proses setelah pengajuan berlangsung. Transisi divalidasi server-side; transisi ilegal ditolak `409 Conflict`.
 
 ```mermaid
 stateDiagram-v2
@@ -92,12 +92,17 @@ stateDiagram-v2
 **Acceptance Criteria:** ACK hanya untuk `SPK_ISSUED`; mencatat `acknowledgedBy`, `acknowledgedAt`; idempoten (ACK ganda tidak membuat record baru).
 
 ### F-06 — Assign Pekerja & Invoice
-**User Story:** Sebagai Admin Finance, saya meng-assign pekerja ke SPK/PO dan menerbitkan invoice.
+**User Story:** Sebagai Admin Pengajuan & RAB, saya menugaskan pekerja melalui surat tugas pada SPK/PO yang telah terbit. Admin Finance menangani invoice pada tahap berikutnya.
 
 **Acceptance Criteria:**
-- Assign ≥ 1 pekerja; pekerja menerima akses baca ke job terkait.
+- Admin mengisi surat dan memilih 1–50 akun `PEKERJA` aktif, tepat satu Ketua, tanpa akun duplikat. Nama ditetapkan server dari akun; okupasi dicatat pada surat. Pekerja menerima akses baca hanya ke pekerjaan yang saat ini ditugaskan kepadanya.
+- Satu surat per SPK; nomor surat unik. Semua field surat wajib lengkap, tanggal valid, akhir pelaksanaan tidak sebelum awal.
+- Form dan preview terpisah dalam tab. PDF/cetak memakai surat yang tersimpan; download memeriksa akses dan versi terbaru.
+- Simpan surat/tim memakai versi; bentrok ditolak `409` dengan isian tetap tersedia. Perubahan surat/tim diaudit dengan snapshot.
+- Anggota yang dikeluarkan langsung kehilangan akses pada permintaan berikutnya. Akun nonaktif tidak dapat login atau mengakses API.
 - Invoice terkait SPK/PO: `invoiceNumber`, `amount`, `dueDate` (`TBD` nilai default), status `UNPAID → PAID`.
-- Assign mengubah `SPK_ISSUED → ASSIGNED`.
+- Menyimpan penugasan pertama membentuk `Assignment.status = ASSIGNED`; status SPK tetap `ISSUED`.
+- Invoice belum termasuk implementasi backend penugasan ini.
 
 **Edge Cases:** assign pekerja nonaktif → `422`; invoice ganda untuk SPK sama → `409`.
 
@@ -108,9 +113,11 @@ stateDiagram-v2
 - Field: `progressPercent` (0–100), `notes` (teks bebas).
 - Submit **tidak mengunci**; edit berikutnya meng-update record yang **sama** (bukan history baru). `updatedAt` diperbarui.
 - `progressPercent > 0` memicu `ASSIGNED → IN_PROGRESS`; `= 100` memicu `IN_PROGRESS → COMPLETED`.
-- Hanya pekerja yang di-assign dapat update job tersebut.
+- Hanya akun pekerja aktif yang masih menjadi anggota dapat mengubah progres. Admin/Finance/Stakeholder hanya membaca.
+- Progres dan catatan adalah satu record bersama per pekerjaan/penugasan; setiap anggota dapat mengubahnya. Pembaruan terakhir berlaku. Pelaku dan waktu pembaruan terakhir disimpan.
+- Audit hanya mencatat transisi status progres, bukan history setiap nilai/catatan. Perubahan progres tidak mengubah versi surat, dan perubahan surat tidak mereset progres.
 
-**Edge Cases:** progres turun dari 100 ke < 100 → status kembali `IN_PROGRESS` (kebijakan `TBD`, default: diizinkan); update bersamaan → last-write-wins dengan `updatedAt`.
+**Edge Cases:** progres turun dari 100 ke 1–99 → `IN_PROGRESS`, ke 0 → `ASSIGNED` (mengikuti default diizinkan); update bersamaan → last-write-wins dengan `updatedAt`.
 
 ### F-08 — Dashboard Monitoring Stakeholder
 **User Story:** Sebagai Stakeholder, saya melihat ringkasan seluruh proses.
@@ -127,7 +134,7 @@ stateDiagram-v2
 
 ## 4. Matriks Otorisasi Aksi (Ringkas)
 
-Matriks berikut adalah target, bukan hak backend yang telah diterapkan. Role database existing tetap `ADMIN_PENGAJUAN`; perluasan akses lintas admin dan backend RAB fase 2 belum disetujui atau diterapkan.
+Matriks berikut adalah target, bukan hak backend yang telah diterapkan. Role database existing tetap `ADMIN_PENGAJUAN`; backend RAB lintas admin sudah diterapkan; penugasan dikelola Admin Pengajuan & RAB sesuai keputusan pengguna. Invoice tetap Finance.
 
 | Aksi | Admin Pengajuan & RAB | Stakeholder | Pekerja | Admin Finance |
 |:---|:---|:---|:---|:---|
@@ -137,7 +144,8 @@ Matriks berikut adalah target, bukan hak backend yang telah diterapkan. Role dat
 | Review/approve RAB | — | ✅ | — | — |
 | Terbitkan SPK/PO (manual) | — | — | — | ✅ |
 | ACK SPK/PO | — | ✅ | — | — |
-| Assign pekerja & invoice | — | — | — | ✅ |
+| Assign pekerja | ✅ | — | — | — |
+| Invoice | — | — | — | ✅ (belum diimplementasikan) |
 | Update progres | — | — | ✅ (own) | — |
 | Dashboard monitoring | Read | Full | Read (own) | Read |
 | Konfigurasi pemicu | ✅ | Read | — | — |

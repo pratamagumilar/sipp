@@ -9,6 +9,7 @@ enum Role {
   ADMIN_PENGAJUAN
   STAKEHOLDER
   FINANCE
+  PEKERJA
 }
 enum SpkTrigger {
   AFTER_RAB_APPROVED
@@ -30,12 +31,17 @@ model User {
   name         String
   passwordHash String
   role         Role
+  active       Boolean @default(true)
+  occupation   String @default("")
   jobs         Job[]
   audits       AuditLog[]
   rabAudits    RabAudit[]
   spkAudits    SpkAudit[]
   acknowledgements Spk[]
   settingAudits SettingAudit[]
+  assignments AssignmentMember[]
+  assignmentAudits AssignmentAudit[]
+  progressUpdates Assignment[] @relation("ProgressActor")
 }
 model Job {
   id              String @id @default(cuid())
@@ -119,6 +125,78 @@ model Spk {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   audits SpkAudit[]
+  assignment Assignment?
+}
+
+enum AssignmentStatus {
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum AssignmentRole {
+  Ketua
+  Anggota
+}
+
+model Assignment {
+  id String @id @default(cuid())
+  spkId String @unique
+  spk Spk @relation(fields: [spkId], references: [id], onDelete: Restrict)
+  number String @unique
+  consideration String
+  basis String
+  purpose String
+  installationType String
+  start DateTime @db.Date
+  end DateTime @db.Date
+  owner String
+  location String
+  capacity String
+  issuePlace String
+  issueDate DateTime @db.Date
+  signatory String
+  signatoryTitle String
+  version Int @default(0)
+  status AssignmentStatus @default(ASSIGNED)
+  progressPercent Int @default(0)
+  progressNotes String @default("")
+  progressUpdatedAt DateTime?
+  progressUpdatedById String?
+  progressUpdatedBy User? @relation("ProgressActor", fields: [progressUpdatedById], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  members AssignmentMember[]
+  audits AssignmentAudit[]
+}
+
+model AssignmentMember {
+  id String @id @default(cuid())
+  assignmentId String
+  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  name String
+  occupation String
+  role AssignmentRole
+  position Int
+  @@unique([assignmentId, userId])
+  @@unique([assignmentId, position])
+  @@index([userId])
+}
+
+model AssignmentAudit {
+  id String @id @default(cuid())
+  assignmentId String
+  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+  actorId String
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  event String
+  fromStatus AssignmentStatus?
+  toStatus AssignmentStatus
+  snapshot Json?
+  createdAt DateTime @default(now())
+  @@index([assignmentId, createdAt])
 }
 
 model SpkAudit {

@@ -42,3 +42,15 @@ export function spkRoute(pathname: string): { view: 'list' | 'settings' | 'detai
     return id === 'pengaturan' ? { view: 'settings' } : { view: 'detail', id };
   } catch { return null; }
 }
+
+export function assignmentRoute(pathname: string): JobRoute | null {
+  const parts = pathname.split('/');
+  if (parts[0] !== '' || parts[1] !== 'penugasan') return null;
+  if (parts.length === 2 || (parts.length === 3 && parts[2] === '')) return { view: 'list' };
+  if (parts.length !== 3 && !(parts.length === 4 && parts[3] === 'edit')) return null;
+  try {
+    const id = decodeURIComponent(parts[2]);
+    if (!id || /[\/\\\x00-\x1f\x7f]/.test(id) || id === '.' || id === '..') return null;
+    return { view: parts.length === 4 ? 'edit' : 'detail', id };
+  } catch { return null; }
+}

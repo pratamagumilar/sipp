@@ -9,12 +9,12 @@
 - **User Roles & Workflows:**
   - *Admin Pengajuan & RAB:* form pengajuan + upload lampiran S3; sebelum `APPROVED`, akses pengajuan hanya milik sendiri. Editor draf RAB per item untuk semua pengajuan `APPROVED`, termasuk buatan admin lain, dan submit ke review stakeholder (DEC-002).
   - *Stakeholder:* inbox approval (DEC-001), review RAB, ACK SPK/PO, dashboard monitoring.
-  - *Admin Finance:* terbitkan SPK/PO (DEC-003/004), assign pekerja, terbitkan invoice; tidak menyusun RAB.
+  - *Admin Finance:* terbitkan SPK/PO (DEC-003/004), lihat penugasan, terbitkan invoice; tidak menyusun RAB.
   - *Pekerja:* daftar tugas sendiri, form progres 0–100% + `notes` yang **dapat diedit ulang tanpa membuat history baru** (DEC-005).
 - **Brand / Aesthetic Direction:** *Institutional-utilitarian ledger.* Netral, tenang, padat data, dengan tipografi tegas dan garis hairline. Referensi rasa: buku besar akuntansi + arsip dokumen. Bukan startup marketing.
 - **Key Personality Traits:** *Tertib, Dapat diaudit, Tenang.*
 
-Alur dan hak akses di atas adalah target desain. Preview RAB saat ini memakai data fiktif terpisah per akun dan masih menyebut editor admin sebagai akses sementara; akses lintas admin belum diterapkan di backend. Identitas database existing tetap `ADMIN_PENGAJUAN`; backend RAB fase 2 belum disetujui.
+Backend RAB dan akses RAB lintas admin sudah tersedia. Identitas admin database tetap `ADMIN_PENGAJUAN`. Penugasan diisi Admin Pengajuan & RAB: daftar SPK terbit → ikon edit → tab Penugasan (surat dan pemilihan akun pekerja) / Preview surat (download PDF dan cetak). Akun PEKERJA melihat pekerjaan yang ditugaskan kepadanya dan mengisi progres 0–100 serta catatan. UI fase 1 penugasan telah disetujui pengguna untuk dilanjutkan ke backend.
 
 ## 2. Design Dials
 

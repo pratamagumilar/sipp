@@ -3,6 +3,7 @@ import { getToken } from 'next-auth/jwt';
 import { z } from 'zod';
 import { Prisma, Status } from '@prisma/client';
 import { db } from './db';
+import { handleAssignmentApi } from './assignment-api';
 import { deleteObject, getObject, putObject } from './storage';
 
 const maxUpload = 10 * 1024 * 1024;
@@ -16,14 +17,15 @@ const fields = z.object({
   capacityUnit: z.string().trim().max(50).optional(), location: z.string().trim().max(1000).optional(),
   offerValue: money.optional(), version: z.number().int().min(0).optional(),
 }).strict();
-export type Actor = { id: string; role: 'ADMIN_PENGAJUAN' | 'STAKEHOLDER' | 'FINANCE' };
+export type Actor = { id: string; role: 'ADMIN_PENGAJUAN' | 'STAKEHOLDER' | 'FINANCE' | 'PEKERJA' };
 type Ctx = { actor: Actor; params: Record<string, string>; request: Request };
 type Route = { method: string; path: string; run: (ctx: Ctx) => Promise<Response> };
 
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
 const fail = (message: string, status: number) => json({ error: message }, status);
 const forbid = () => new Response(null, { status: 403 });
-const accessible = (actor: Actor) => actor.role === 'STAKEHOLDER' ? {} : { ownerId: actor.id };
+const workerJobs = (actor: Actor): Prisma.JobWhereInput => actor.role === 'PEKERJA' ? { rab: { spk: { assignment: { members: { some: { userId: actor.id } } } } } } : {};
+const accessible = (actor: Actor): Prisma.JobWhereInput => actor.role === 'PEKERJA' ? workerJobs(actor) : actor.role === 'STAKEHOLDER' ? {} : { ownerId: actor.id };
 export const listJobs = (actor: Actor) => db.job.findMany({ where: accessible(actor), orderBy: { updatedAt: 'desc' as const }, include: { owner: { select: { name: true } } } });
 export const listInstallationTypes = () => db.installationType.findMany({ orderBy: { code: 'asc' as const } });
 const details = { attachments: { select: { id: true, filename: true, size: true, createdAt: true } }, audits: { orderBy: { createdAt: 'asc' as const }, include: { actor: { select: { name: true } } } }, owner: { select: { name: true } } };
@@ -73,12 +75,12 @@ const routes: Route[] = [
     if (!setting) return fail('Pengaturan berubah. Muat ulang.', 409);
     return json({ trigger: setting.spkTrigger, version: setting.version });
   } },
-  { method: 'GET', path: 'spks', run: async () => {
-    const rabs = await db.rab.findMany({ where: { status: 'RAB_APPROVED', job: { status: 'APPROVED' } }, orderBy: { updatedAt: 'desc' }, include: spkInclude });
+  { method: 'GET', path: 'spks', run: async ctx => {
+    const rabs = await db.rab.findMany({ where: { status: 'RAB_APPROVED', job: { status: 'APPROVED', ...workerJobs(ctx.actor) } }, orderBy: { updatedAt: 'desc' }, include: spkInclude });
     return json(rabs.map(spkView));
   } },
   { method: 'GET', path: 'jobs/:id/spk', run: async ctx => {
-    const rab = await db.rab.findFirst({ where: { jobId: ctx.params.id, status: 'RAB_APPROVED', job: { status: 'APPROVED' } }, include: spkInclude });
+    const rab = await db.rab.findFirst({ where: { jobId: ctx.params.id, status: 'RAB_APPROVED', job: { status: 'APPROVED', ...workerJobs(ctx.actor) } }, include: spkInclude });
     if (!rab) return fail('SPK tidak ditemukan', 404);
     return json(spkView(rab));
   } },
@@ -129,11 +131,11 @@ const routes: Route[] = [
     if (result === 'conflict') return fail('SPK belum diterbitkan', 409);
     return json(result);
   } },
-  { method: 'GET', path: 'rabs/jobs', run: async () => {
-    return json(await db.job.findMany({ where: { status: 'APPROVED' }, orderBy: { updatedAt: 'desc' }, select: { ...rabJob, rab: { select: { status: true, version: true } } } }));
+  { method: 'GET', path: 'rabs/jobs', run: async ctx => {
+    return json(await db.job.findMany({ where: { status: 'APPROVED', ...workerJobs(ctx.actor) }, orderBy: { updatedAt: 'desc' }, select: { ...rabJob, rab: { select: { status: true, version: true } } } }));
   } },
   { method: 'GET', path: 'jobs/:id/rab', run: async ctx => {
-    const rab = await db.rab.findFirst({ where: { jobId: ctx.params.id, job: { status: 'APPROVED' } }, include: rabInclude });
+    const rab = await db.rab.findFirst({ where: { jobId: ctx.params.id, job: { status: 'APPROVED', ...workerJobs(ctx.actor) } }, include: rabInclude });
     if (!rab) return fail('RAB tidak ditemukan', 404);
     return json(rab);
   } },
@@ -312,9 +314,12 @@ export async function handleApi(request: Request, segments: string[]): Promise<R
     const secure = process.env.AUTH_URL?.startsWith('https://') || false;
     const token = await getToken({ req: request, secret: process.env.AUTH_SECRET!, secureCookie: secure });
     if (!token?.sub) return fail('Silakan masuk', 401);
-    const user = await db.user.findUnique({ where: { id: token.sub }, select: { id: true, role: true } });
-    if (!user) return fail('Sesi tidak valid', 401);
+    const user = await db.user.findUnique({ where: { id: token.sub }, select: { id: true, role: true, active: true } });
+    if (!user || !user.active) return fail('Sesi tidak valid', 401);
     const actor: Actor = { id: user.id, role: user.role as Actor['role'] };
+    const assignment = await handleAssignmentApi(request, segments, actor);
+    if (assignment) return assignment;
+    if (actor.role === 'PEKERJA' && (method !== 'GET' || !(/^\/jobs(?:\/[^/]+(?:\/rab|\/spk)?)?$/.test(path) || /^\/attachments\/[^/]+$/.test(path) || path === '/spks' || path === '/rabs/jobs' || path === '/installation-types'))) return forbid();
     if (actor.role === 'FINANCE' && !(/^\/spks\/?$/.test(path) || /^\/jobs\/[^/]+\/spk(?:\/(?:prepare|issue|ack))?\/?$/.test(path) || (method === 'GET' && path === '/settings/spk-trigger'))) return forbid();
     for (const route of routes) {
       const params = match(route, method, segments);
